@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -47,4 +48,20 @@ type RaftNode struct {
 
 	electionTimer   *time.Timer
 	heartbeatTicker *time.Ticker
+}
+
+func NewRaftNode() *RaftNode {
+	return &RaftNode{
+		state:           Follower,
+		currentTerm:     0,
+		votedFor:        -1,
+		logEntries:      make([]LogEntry, 0),
+		commitIndex:     0,
+		lastApplied:     0,
+		nextIndex:       make(map[int]int64),
+		matchIndex:      make(map[int]int64),
+		applyCh:         make(chan ApplyMsg),
+		electionTimer:   time.NewTimer(time.Duration(rand.Intn(400)) * time.Millisecond),
+		heartbeatTicker: time.NewTicker(50 * time.Millisecond),
+	}
 }
