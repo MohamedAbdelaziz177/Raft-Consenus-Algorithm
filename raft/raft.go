@@ -1,12 +1,15 @@
 package raft
 
 import (
+	"log"
 	"math/rand"
+	"net"
 	"sync"
 	"time"
 
 	raftproto "github.com/MohamedAbdelaziz177/Raft-Consenus-Algorithm/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type raftState int
@@ -31,13 +34,15 @@ type PeerClient struct {
 }
 
 type RaftNode struct {
-	id    int
+	raftproto.UnimplementedRaftServicesServer
+
+	id    int32
 	state raftState
 
 	mu sync.Mutex
 
 	currentTerm int64
-	votedFor    int
+	votedFor    int32
 
 	logEntries []*raftproto.LogEntry
 
@@ -47,7 +52,8 @@ type RaftNode struct {
 	nextIndex  map[int]int64
 	matchIndex map[int]int64
 
-	peers map[int]*PeerClient
+	server *raftproto.RaftServicesServer
+	peers  map[int]raftproto.RaftServicesClient
 
 	applyCh chan ApplyMsg
 
@@ -69,4 +75,42 @@ func NewRaftNode() *RaftNode {
 		electionTimer:   time.NewTimer(time.Duration(rand.Intn(400)) * time.Millisecond),
 		heartbeatTicker: time.NewTicker(150 * time.Millisecond),
 	}
+}
+
+func (node *RaftNode) RunServer(addr string) error {
+
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	grpcServer := grpc.NewServer()
+	raftproto.RegisterRaftServicesServer(grpcServer, *node.server)
+
+	go func() {
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatalf("grpc server failed: %v", err)
+			panic(err)
+		}
+	}()
+
+	return nil
+}
+
+func (node *RaftNode) RegisterClients(peerAddrs map[int]string) {
+	clients := make(map[int]raftproto.RaftServicesClient)
+
+	for k, v := range peerAddrs {
+		conn, err := grpc.NewClient(
+			v, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+		if err != nil {
+			log.Printf("failed to dial peer %d: %v", k, err)
+			continue
+		}
+
+		clients[k] = raftproto.NewRaftServicesClient(conn)
+	}
+
+	node.peers = clients
 }
