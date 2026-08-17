@@ -32,7 +32,7 @@ func (node *RaftNode) RequestVote(ctx context.Context, request *raftproto.Reques
 	if node.currentTerm == request.Term && validLog && (node.votedFor == -1 || node.votedFor == request.CandidateId) {
 
 		node.votedFor = request.CandidateId
-		node.ResetElectionTimer()
+		node.resetElectionTimer()
 
 		return &raftproto.RequestVoteReply{
 			FollowerTerm: node.currentTerm,
@@ -63,39 +63,45 @@ func (node *RaftNode) AppendEntries(ctx context.Context, request *raftproto.Appe
 
 	lastLogIdx := len(node.logEntries) - 1
 
-	if request.PrevLogIndex > -1 && request.PrevLogIndex > int64(lastLogIdx) {
-		return &raftproto.AppendEntriesReply{
-			Success: false,
-			Term:    node.currentTerm,
-		}, nil
-	}
+	if request.PrevLogIndex > -1 {
 
-	prevLogItemTermAtReciver := node.logEntries[request.PrevLogIndex].Term
-	if request.PrevLogIndex > -1 && prevLogItemTermAtReciver != request.PrevLogTerm {
-		return &raftproto.AppendEntriesReply{
-			Success: false,
-			Term:    node.currentTerm,
-		}, nil
-	}
+		if request.PrevLogIndex > int64(lastLogIdx) {
+			return &raftproto.AppendEntriesReply{
+				Success: false,
+				Term:    node.currentTerm,
+			}, nil
+		}
 
-	for i, entry := range request.LogEntries {
-		currIdx := int(request.PrevLogIndex) + 1 + i
-
-		if currIdx < len(node.logEntries) {
-			if node.logEntries[currIdx].Term != entry.Term {
-				node.logEntries = node.logEntries[:currIdx]
-				break
-			}
+		prevLogTermAtReciver := node.logEntries[request.PrevLogIndex].Term
+		if prevLogTermAtReciver != request.PrevLogTerm {
+			return &raftproto.AppendEntriesReply{
+				Success: false,
+				Term:    node.currentTerm,
+			}, nil
 		}
 	}
 
-	node.logEntries = append(node.logEntries, request.LogEntries...)
+	for i, reqEntry := range request.LogEntries {
+
+		followerIdx := int(request.PrevLogIndex) + 1 + i
+
+		if followerIdx >= len(node.logEntries) {
+			node.logEntries = append(node.logEntries, request.LogEntries[i:]...)
+			break
+		}
+
+		if node.logEntries[followerIdx].Term != reqEntry.Term {
+			node.logEntries = node.logEntries[:followerIdx]
+			node.logEntries = append(node.logEntries, request.LogEntries[i:]...)
+			break
+		}
+	}
 
 	if request.LeaderCommitIdx > node.commitIndex {
 		node.commitIndex = min(request.LeaderCommitIdx, int64(len(node.logEntries)-1))
 	}
 
-	node.ResetElectionTimer()
+	node.resetElectionTimer()
 
 	return &raftproto.AppendEntriesReply{
 		Term:    node.currentTerm,

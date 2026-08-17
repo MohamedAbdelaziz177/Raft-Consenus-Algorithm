@@ -72,7 +72,7 @@ func (node *RaftNode) stepDownToFollower(reqVoteRes *raftproto.RequestVoteReply)
 	node.state = Follower
 	node.currentTerm = reqVoteRes.FollowerTerm
 	node.votedFor = -1
-	node.ResetElectionTimer()
+	node.resetElectionTimer()
 }
 
 func (node *RaftNode) levelUpToLeader(grantedVotes int) {
