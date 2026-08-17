@@ -15,9 +15,33 @@ type appendEntriesHandlerContext struct {
 	prevLogTerm int64
 }
 
+func (node *RaftNode) listenToHeartBeatTicker(ctx context.Context) {
+	for {
+		select {
+		case <-node.heartbeatTicker.C:
+			node.mu.Lock()
+			state := node.state
+			node.mu.Unlock()
+
+			if state != Leader {
+				node.heartbeatTicker.Stop()
+				return
+			}
+
+			node.sendHeartBeatToAllPeers()
+
+		case <-ctx.Done():
+			return
+		}
+
+	}
+}
+
 func (node *RaftNode) sendHeartBeatToAllPeers() {
 
 	for id, peerClient := range node.peers {
+
+		node.mu.Lock()
 
 		nextIdx := node.nextIndex[id]
 		prevLogIdx := nextIdx - 1
@@ -34,39 +58,28 @@ func (node *RaftNode) sendHeartBeatToAllPeers() {
 			client:      peerClient,
 		}
 
+		aeRequest := &raftproto.AppendEntriesRequest{
+			Term:            node.currentTerm,
+			LeaderId:        node.id,
+			LeaderCommitIdx: node.commitIndex,
+			LogEntries:      node.logEntries[nextIdx:],
+			PrevLogIndex:    aeCtx.prevLogIdx,
+			PrevLogTerm:     aeCtx.prevLogTerm,
+		}
+
+		node.mu.Unlock()
+
 		go func(aeCtx appendEntriesHandlerContext) {
-			_, err := peerClient.AppendEntries(context.Background(), &raftproto.AppendEntriesRequest{
-				Term:            node.currentTerm,
-				LeaderId:        node.id,
-				LeaderCommitIdx: node.commitIndex,
-				LogEntries:      node.logEntries[nextIdx:],
-				PrevLogIndex:    aeCtx.prevLogIdx,
-				PrevLogTerm:     aeCtx.prevLogTerm,
-			})
+
+			reply, err := peerClient.AppendEntries(context.Background(), aeRequest)
 
 			if err != nil {
 				return
 			}
 
+			node.handleAppendEntriesReply(aeCtx.id, aeRequest, reply)
+
 		}(aeCtx)
-	}
-}
-
-func (node *RaftNode) listenToHeartBeatTicker() {
-	for {
-		select {
-		case <-node.heartbeatTicker.C:
-			node.mu.Lock()
-			state := node.state
-			node.mu.Unlock()
-
-			if state != Leader {
-				node.heartbeatTicker.Stop()
-				return
-			}
-
-			go node.sendHeartBeatToAllPeers()
-		}
 	}
 }
 
@@ -79,7 +92,6 @@ func (node *RaftNode) detectElectionTimeout() {
 		if state != Leader {
 			node.startElection()
 		}
-
 	}
 }
 
@@ -95,10 +107,52 @@ func (node *RaftNode) resetElectionTimer() {
 	node.electionTimer.Reset(timeout)
 }
 
-func (node *RaftNode) handleAppendEntriesReply(reply *raftproto.AppendEntriesReply) {
+func (node *RaftNode) handleAppendEntriesReply(
+	peerId int,
+	aeRequest *raftproto.AppendEntriesRequest,
+	reply *raftproto.AppendEntriesReply,
+) {
+
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
 	if reply.Term > node.currentTerm {
-		node.currentTerm++
+		node.currentTerm = reply.Term
 		node.state = Follower
 		node.votedFor = -1
+		node.resetElectionTimer()
+		return
+	}
+
+	if node.state != Leader {
+		return
+	}
+
+	if !reply.Success {
+		if node.nextIndex[peerId] > 0 {
+			node.nextIndex[peerId]--
+		}
+		return
+	}
+
+	matchIdx := aeRequest.PrevLogIndex + int64(len(aeRequest.LogEntries))
+	node.matchIndex[peerId] = matchIdx
+	node.nextIndex[peerId] = matchIdx + 1
+	node.incrLeaderCommitIdx()
+}
+
+func (node *RaftNode) incrLeaderCommitIdx() {
+	for i := node.commitIndex + 1; i < int64(len(node.logEntries)); i++ {
+		count := 1
+
+		for _, matchIdx := range node.matchIndex {
+			if matchIdx >= i {
+				count++
+			}
+		}
+
+		if count*2 > NO_OF_NODES && node.logEntries[i].Term == node.currentTerm {
+			node.commitIndex = i
+		}
 	}
 }

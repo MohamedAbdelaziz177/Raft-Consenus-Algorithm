@@ -66,6 +66,9 @@ func (node *RaftNode) startElection() {
 	node.levelUpToLeader(grantedVotes)
 	node.mu.Unlock()
 
+	go node.sendHeartBeatToAllPeers()
+	node.heartbeatTicker = time.NewTicker(150 * time.Millisecond)
+	node.listenToHeartBeatTicker(context.Background())
 }
 
 func (node *RaftNode) stepDownToFollower(reqVoteRes *raftproto.RequestVoteReply) {
