@@ -12,9 +12,14 @@ const NO_OF_NODES int = 5
 
 func (node *RaftNode) startElection() {
 
+	node.mu.Lock()
+
 	node.votedFor = node.id
 	node.state = Candidate
 	node.currentTerm++
+	electionTerm := node.currentTerm
+
+	node.resetElectionTimer()
 
 	var lastLogIndex int64 = -1
 	var lastLogTerm int64 = 0
@@ -30,6 +35,8 @@ func (node *RaftNode) startElection() {
 		LastLogIndex: lastLogIndex,
 		LastLogTerm:  lastLogTerm,
 	}
+
+	node.mu.Unlock()
 
 	wg := sync.WaitGroup{}
 	grantedVotes := 1
@@ -51,6 +58,12 @@ func (node *RaftNode) startElection() {
 
 			if reqVoteRes.FollowerTerm > node.currentTerm {
 				node.stepDownToFollower(reqVoteRes)
+				return
+			}
+
+			// may be increased due to an append-entry request in another go routine
+			if node.currentTerm != electionTerm {
+				return
 			}
 
 			if reqVoteRes.VoteGranted == true {
@@ -63,12 +76,8 @@ func (node *RaftNode) startElection() {
 	wg.Wait()
 
 	node.mu.Lock()
-	node.levelUpToLeader(grantedVotes)
+	node.levelUpToLeaderOrResetTimer(grantedVotes)
 	node.mu.Unlock()
-
-	go node.sendHeartBeatToAllPeers()
-	node.heartbeatTicker = time.NewTicker(150 * time.Millisecond)
-	node.listenToHeartBeatTicker(context.Background())
 }
 
 func (node *RaftNode) stepDownToFollower(reqVoteRes *raftproto.RequestVoteReply) {
@@ -78,8 +87,8 @@ func (node *RaftNode) stepDownToFollower(reqVoteRes *raftproto.RequestVoteReply)
 	node.resetElectionTimer()
 }
 
-func (node *RaftNode) levelUpToLeader(grantedVotes int) {
-	if node.state == Candidate && 2*grantedVotes >= NO_OF_NODES {
+func (node *RaftNode) levelUpToLeaderOrResetTimer(grantedVotes int) {
+	if node.state == Candidate && 2*grantedVotes > NO_OF_NODES {
 		node.state = Leader
 
 		node.nextIndex = make(map[int]int64)
@@ -90,8 +99,8 @@ func (node *RaftNode) levelUpToLeader(grantedVotes int) {
 			node.matchIndex[id] = int64(-1)
 		}
 
+		go node.sendHeartBeatToAllPeers()
 		node.heartbeatTicker = time.NewTicker(150 * time.Millisecond)
-		// notes: send heart beat directly & then run the ticker
-		// go node.StartHeartBeatLoop()
+		go node.listenToHeartBeatTicker(context.Background())
 	}
 }
