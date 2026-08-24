@@ -22,7 +22,7 @@ const (
 
 type ApplyMsg struct {
 	CommandValid bool
-	Command      string
+	Command      []byte
 	CommandIndex int
 }
 
@@ -52,8 +52,7 @@ type RaftNode struct {
 	nextIndex  map[int]int64
 	matchIndex map[int]int64
 
-	server *raftproto.RaftServicesServer
-	peers  map[int]raftproto.RaftServicesClient
+	peers map[int]raftproto.RaftServicesClient
 
 	applyCh chan ApplyMsg
 
@@ -67,13 +66,13 @@ func NewRaftNode() *RaftNode {
 		currentTerm:     0,
 		votedFor:        -1,
 		logEntries:      make([]*raftproto.LogEntry, 0),
-		commitIndex:     0,
-		lastApplied:     0,
+		commitIndex:     -1,
+		lastApplied:     -1,
 		nextIndex:       make(map[int]int64),
 		matchIndex:      make(map[int]int64),
 		applyCh:         make(chan ApplyMsg),
 		electionTimer:   time.NewTimer(time.Duration(rand.Intn(400)) * time.Millisecond),
-		heartbeatTicker: time.NewTicker(150 * time.Millisecond),
+		heartbeatTicker: nil,
 	}
 }
 
@@ -85,7 +84,7 @@ func (node *RaftNode) RunServer(addr string) error {
 	}
 
 	grpcServer := grpc.NewServer()
-	raftproto.RegisterRaftServicesServer(grpcServer, *node.server)
+	raftproto.RegisterRaftServicesServer(grpcServer, node)
 
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil {
@@ -113,4 +112,33 @@ func (node *RaftNode) RegisterClients(peerAddrs map[int]string) {
 	}
 
 	node.peers = clients
+}
+
+func (node *RaftNode) StartMessageApplier() {
+	go func() {
+		for {
+			node.mu.Lock()
+
+			if node.lastApplied >= node.commitIndex {
+				node.mu.Unlock()
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+
+			node.lastApplied++
+
+			idx := node.lastApplied
+			entry := node.logEntries[idx]
+
+			msg := ApplyMsg{
+				Command:      entry.Data,
+				CommandValid: true,
+				CommandIndex: int(idx),
+			}
+
+			node.mu.Unlock()
+
+			node.applyCh <- msg
+		}
+	}()
 }

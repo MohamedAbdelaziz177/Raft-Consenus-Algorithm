@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -36,71 +37,210 @@ func (node *RaftNode) startElection() {
 		LastLogTerm:  lastLogTerm,
 	}
 
+	log.Printf(
+		"[Node %d] Starting election: term=%d lastLog=(idx=%d,term=%d)",
+		node.id,
+		electionTerm,
+		lastLogIndex,
+		lastLogTerm,
+	)
+
 	node.mu.Unlock()
 
 	wg := sync.WaitGroup{}
 	grantedVotes := 1
 
-	for _, PeerClient := range node.peers {
+	for peerID, peerClient := range node.peers {
 
 		wg.Add(1)
-		go func(peer raftproto.RaftServicesClient) {
+
+		go func(peerID int, peer raftproto.RaftServicesClient) {
 
 			defer wg.Done()
 
-			reqVoteRes, err := peer.RequestVote(context.Background(), requestVoteObj)
+			reqVoteRes, err := peer.RequestVote(
+				context.Background(),
+				requestVoteObj,
+			)
+
 			if err != nil {
+				log.Printf(
+					"[Node %d] RequestVote to Node %d failed: %v",
+					node.id,
+					peerID,
+					err,
+				)
 				return
 			}
 
 			node.mu.Lock()
 			defer node.mu.Unlock()
 
+			log.Printf(
+				"[Node %d] Received RequestVote reply from Node %d: "+
+					"term=%d voteGranted=%t",
+				node.id,
+				peerID,
+				reqVoteRes.FollowerTerm,
+				reqVoteRes.VoteGranted,
+			)
+
 			if reqVoteRes.FollowerTerm > node.currentTerm {
+
+				log.Printf(
+					"[Node %d] Node %d has higher term: %d -> %d. Stepping down",
+					node.id,
+					peerID,
+					node.currentTerm,
+					reqVoteRes.FollowerTerm,
+				)
+
 				node.stepDownToFollower(reqVoteRes)
 				return
 			}
 
-			// may be increased due to an append-entry request in another go routine
 			if node.currentTerm != electionTerm {
+
+				log.Printf(
+					"[Node %d] Ignoring vote from Node %d: election term %d is no longer current (currentTerm=%d)",
+					node.id,
+					peerID,
+					electionTerm,
+					node.currentTerm,
+				)
+
 				return
 			}
 
-			if reqVoteRes.VoteGranted == true {
-				grantedVotes++
+			if node.state != Candidate {
+				log.Printf(
+					"[Node %d] Ignoring vote from Node %d: node is no longer a candidate",
+					node.id,
+					peerID,
+				)
+
+				return
 			}
 
-		}(PeerClient)
+			if reqVoteRes.VoteGranted {
+				grantedVotes++
+
+				log.Printf(
+					"[Node %d] Vote granted by Node %d: votes=%d/%d",
+					node.id,
+					peerID,
+					grantedVotes,
+					NO_OF_NODES,
+				)
+			} else {
+				log.Printf(
+					"[Node %d] Vote rejected by Node %d: votes=%d/%d",
+					node.id,
+					peerID,
+					grantedVotes,
+					NO_OF_NODES,
+				)
+			}
+
+		}(peerID, peerClient)
 	}
 
 	wg.Wait()
 
 	node.mu.Lock()
-	node.levelUpToLeaderOrResetTimer(grantedVotes)
-	node.mu.Unlock()
+	defer node.mu.Unlock()
+
+	if node.currentTerm != electionTerm {
+		log.Printf(
+			"[Node %d] Election for term %d finished but current term is %d. Not becoming leader",
+			node.id,
+			electionTerm,
+			node.currentTerm,
+		)
+		return
+	}
+
+	if node.state != Candidate {
+		log.Printf(
+			"[Node %d] Election for term %d finished but node is no longer a candidate",
+			node.id,
+			electionTerm,
+		)
+		return
+	}
+
+	log.Printf(
+		"[Node %d] Election finished: votes=%d/%d term=%d",
+		node.id,
+		grantedVotes,
+		NO_OF_NODES,
+		electionTerm,
+	)
+
+	node.levelUpToLeader(grantedVotes)
 }
 
 func (node *RaftNode) stepDownToFollower(reqVoteRes *raftproto.RequestVoteReply) {
+
+	log.Printf(
+		"[Node %d] Stepping down to FOLLOWER: term %d -> %d",
+		node.id,
+		node.currentTerm,
+		reqVoteRes.FollowerTerm,
+	)
+
 	node.state = Follower
 	node.currentTerm = reqVoteRes.FollowerTerm
 	node.votedFor = -1
 	node.resetElectionTimer()
+
+	if node.heartbeatTicker != nil {
+		node.heartbeatTicker.Stop()
+		node.heartbeatTicker = nil
+	}
 }
 
-func (node *RaftNode) levelUpToLeaderOrResetTimer(grantedVotes int) {
-	if node.state == Candidate && 2*grantedVotes > NO_OF_NODES {
-		node.state = Leader
+func (node *RaftNode) levelUpToLeader(grantedVotes int) {
 
-		node.nextIndex = make(map[int]int64)
-		node.matchIndex = make(map[int]int64)
-
-		for id := range node.peers {
-			node.nextIndex[id] = int64(len(node.logEntries))
-			node.matchIndex[id] = int64(-1)
-		}
-
-		go node.sendHeartBeatToAllPeers()
-		node.heartbeatTicker = time.NewTicker(150 * time.Millisecond)
-		go node.listenToHeartBeatTicker(context.Background())
+	if node.state != Candidate {
+		return
 	}
+
+	if 2*grantedVotes <= NO_OF_NODES {
+
+		log.Printf(
+			"[Node %d] Failed to win election: votes=%d/%d term=%d",
+			node.id,
+			grantedVotes,
+			NO_OF_NODES,
+			node.currentTerm,
+		)
+
+		return
+	}
+
+	node.state = Leader
+
+	node.nextIndex = make(map[int]int64)
+	node.matchIndex = make(map[int]int64)
+
+	for id := range node.peers {
+		node.nextIndex[id] = int64(len(node.logEntries))
+		node.matchIndex[id] = int64(-1)
+	}
+
+	log.Printf(
+		"[Node %d] Became LEADER: term=%d votes=%d/%d logLength=%d",
+		node.id,
+		node.currentTerm,
+		grantedVotes,
+		NO_OF_NODES,
+		len(node.logEntries),
+	)
+
+	go node.sendHeartBeatToAllPeers()
+
+	node.heartbeatTicker = time.NewTicker(150 * time.Millisecond)
+
+	go node.listenToHeartBeatTicker(context.Background())
 }
