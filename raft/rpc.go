@@ -216,8 +216,7 @@ func (node *RaftNode) AppendEntries(
 
 		followerIdx := int(request.PrevLogIndex) + 1 + i
 
-		// Follower doesn't have this entry.
-		if followerIdx >= len(node.logEntries) {
+		if followerIdx == len(node.logEntries) {
 
 			log.Printf(
 				"[Node %d] Appending %d new entries starting at index=%d",
