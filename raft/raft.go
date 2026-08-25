@@ -58,7 +58,7 @@ type RaftNode struct {
 
 	peers map[int]raftproto.RaftServicesClient
 
-	applyCh chan ApplyMsg
+	ApplyCh chan ApplyMsg
 
 	electionTimer   *time.Timer
 	heartbeatTicker *time.Ticker
@@ -74,7 +74,7 @@ func NewRaftNode() *RaftNode {
 		lastApplied:     -1,
 		nextIndex:       make(map[int]int64),
 		matchIndex:      make(map[int]int64),
-		applyCh:         make(chan ApplyMsg),
+		ApplyCh:         make(chan ApplyMsg),
 		electionTimer:   time.NewTimer(time.Duration(rand.Intn(400)) * time.Millisecond),
 		heartbeatTicker: nil,
 	}
@@ -163,7 +163,7 @@ func (node *RaftNode) StartMessageApplier() {
 
 			node.mu.Unlock()
 
-			node.applyCh <- msg
+			node.ApplyCh <- msg
 		}
 	}()
 }

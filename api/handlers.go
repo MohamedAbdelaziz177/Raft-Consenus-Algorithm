@@ -15,9 +15,10 @@ type Handler struct {
 	store *storage.KVStore
 }
 
-func NewHandler(node *raft.RaftNode) Handler {
+func NewHandler(node *raft.RaftNode, store *storage.KVStore) Handler {
 	return Handler{
-		node: node,
+		node:  node,
+		store: store,
 	}
 }
 

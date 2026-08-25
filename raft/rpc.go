@@ -35,7 +35,7 @@ func (node *RaftNode) RequestVote(
 
 		node.currentTerm = request.Term
 		node.votedFor = -1
-		node.state = Follower
+		node.State = Follower
 	}
 
 	if request.Term < node.currentTerm {
@@ -159,10 +159,10 @@ func (node *RaftNode) AppendEntries(
 
 		node.currentTerm = request.Term
 		node.votedFor = -1
-		node.state = Follower
+		node.State = Follower
 	}
 
-	if node.state != Follower {
+	if node.State != Follower {
 		log.Printf(
 			"[Node %d] Stepping down to FOLLOWER because leader=%d has valid term=%d",
 			node.id,
@@ -170,7 +170,7 @@ func (node *RaftNode) AppendEntries(
 			request.Term,
 		)
 
-		node.state = Follower
+		node.State = Follower
 	}
 
 	lastLogIdx := len(node.logEntries) - 1

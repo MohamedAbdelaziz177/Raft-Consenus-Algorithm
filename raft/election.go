@@ -16,7 +16,7 @@ func (node *RaftNode) startElection() {
 	node.mu.Lock()
 
 	node.votedFor = node.id
-	node.state = Candidate
+	node.State = Candidate
 	node.currentTerm++
 	electionTerm := node.currentTerm
 
@@ -112,7 +112,7 @@ func (node *RaftNode) startElection() {
 				return
 			}
 
-			if node.state != Candidate {
+			if node.State != Candidate {
 				log.Printf(
 					"[Node %d] Ignoring vote from Node %d: node is no longer a candidate",
 					node.id,
@@ -160,7 +160,7 @@ func (node *RaftNode) startElection() {
 		return
 	}
 
-	if node.state != Candidate {
+	if node.State != Candidate {
 		log.Printf(
 			"[Node %d] Election for term %d finished but node is no longer a candidate",
 			node.id,
@@ -189,7 +189,7 @@ func (node *RaftNode) stepDownToFollower(reqVoteRes *raftproto.RequestVoteReply)
 		reqVoteRes.FollowerTerm,
 	)
 
-	node.state = Follower
+	node.State = Follower
 	node.currentTerm = reqVoteRes.FollowerTerm
 	node.votedFor = -1
 	node.resetElectionTimer()
@@ -202,7 +202,7 @@ func (node *RaftNode) stepDownToFollower(reqVoteRes *raftproto.RequestVoteReply)
 
 func (node *RaftNode) levelUpToLeader(grantedVotes int) {
 
-	if node.state != Candidate {
+	if node.State != Candidate {
 		return
 	}
 
@@ -219,7 +219,7 @@ func (node *RaftNode) levelUpToLeader(grantedVotes int) {
 		return
 	}
 
-	node.state = Leader
+	node.State = Leader
 
 	node.nextIndex = make(map[int]int64)
 	node.matchIndex = make(map[int]int64)
