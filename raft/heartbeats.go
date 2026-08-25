@@ -21,7 +21,7 @@ func (node *RaftNode) listenToHeartBeatTicker(ctx context.Context) {
 		select {
 		case <-node.heartbeatTicker.C:
 			node.mu.Lock()
-			state := node.state
+			state := node.State
 			node.mu.Unlock()
 
 			if state != Leader {
@@ -109,7 +109,7 @@ func (node *RaftNode) DetectElectionTimeout() {
 		<-node.electionTimer.C
 
 		node.mu.Lock()
-		state := node.state
+		state := node.State
 		node.mu.Unlock()
 
 		if state != Leader {
@@ -154,13 +154,13 @@ func (node *RaftNode) handleAppendEntriesReply(
 		)
 
 		node.currentTerm = reply.Term
-		node.state = Follower
+		node.State = Follower
 		node.votedFor = -1
 		node.resetElectionTimer()
 		return
 	}
 
-	if node.state != Leader {
+	if node.State != Leader {
 		return
 	}
 

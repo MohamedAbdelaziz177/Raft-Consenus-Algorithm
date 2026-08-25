@@ -33,11 +33,15 @@ type PeerClient struct {
 	Connection *grpc.ClientConn
 }
 
+type IRaftNode interface {
+	execute(command []byte) (int64, bool)
+}
+
 type RaftNode struct {
 	raftproto.UnimplementedRaftServicesServer
 
 	id    int32
-	state raftState
+	State raftState
 
 	mu sync.Mutex
 
@@ -62,7 +66,7 @@ type RaftNode struct {
 
 func NewRaftNode() *RaftNode {
 	return &RaftNode{
-		state:           Follower,
+		State:           Follower,
 		currentTerm:     0,
 		votedFor:        -1,
 		logEntries:      make([]*raftproto.LogEntry, 0),
@@ -94,6 +98,27 @@ func (node *RaftNode) RunServer(addr string) error {
 	}()
 
 	return nil
+}
+
+func (node *RaftNode) Execute(command []byte) (int64, bool) {
+
+	node.mu.Lock()
+	node.mu.Unlock()
+
+	if node.State != Leader {
+		return -1, false
+	}
+
+	incomingIdx := int64(len(node.logEntries))
+	entry := raftproto.LogEntry{
+		Data: command,
+		Idx:  incomingIdx,
+		Term: node.currentTerm,
+	}
+
+	node.logEntries = append(node.logEntries, &entry)
+
+	return incomingIdx, true
 }
 
 func (node *RaftNode) RegisterClients(peerAddrs map[int]string) {
