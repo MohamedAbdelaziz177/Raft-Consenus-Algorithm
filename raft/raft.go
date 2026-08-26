@@ -1,9 +1,11 @@
 package raft
 
 import (
+	"encoding/json"
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -12,10 +14,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type raftState int
+type RaftState int
 
 const (
-	Follower raftState = iota
+	Follower RaftState = iota
 	Candidate
 	Leader
 )
@@ -41,12 +43,13 @@ type RaftNode struct {
 	raftproto.UnimplementedRaftServicesServer
 
 	id    int32
-	State raftState
+	State RaftState
 
 	mu sync.Mutex
 
 	currentTerm int64
 	votedFor    int32
+	leaderID    int32
 
 	logEntries []*raftproto.LogEntry
 
@@ -64,11 +67,13 @@ type RaftNode struct {
 	heartbeatTicker *time.Ticker
 }
 
-func NewRaftNode() *RaftNode {
+func NewRaftNode(id int32) *RaftNode {
 	return &RaftNode{
+		id:              id,
 		State:           Follower,
 		currentTerm:     0,
 		votedFor:        -1,
+		leaderID:        -1,
 		logEntries:      make([]*raftproto.LogEntry, 0),
 		commitIndex:     -1,
 		lastApplied:     -1,
@@ -78,6 +83,12 @@ func NewRaftNode() *RaftNode {
 		electionTimer:   time.NewTimer(time.Duration(rand.Intn(400)) * time.Millisecond),
 		heartbeatTicker: nil,
 	}
+}
+
+func (node *RaftNode) LeaderID() int32 {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+	return node.leaderID
 }
 
 func (node *RaftNode) RunServer(addr string) error {
@@ -103,7 +114,7 @@ func (node *RaftNode) RunServer(addr string) error {
 func (node *RaftNode) Execute(command []byte) (int64, bool) {
 
 	node.mu.Lock()
-	node.mu.Unlock()
+	defer node.mu.Unlock()
 
 	if node.State != Leader {
 		return -1, false
@@ -166,4 +177,30 @@ func (node *RaftNode) StartMessageApplier() {
 			node.ApplyCh <- msg
 		}
 	}()
+}
+
+func (node *RaftNode) DebugNodeState(w http.ResponseWriter) {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"state":       stateToString(node.State),
+		"term":        node.currentTerm,
+		"commitIndex": node.commitIndex,
+		"lastApplied": node.lastApplied,
+		"logLength":   len(node.logEntries),
+	})
+}
+
+func stateToString(state RaftState) string {
+	switch state {
+	case Follower:
+		return "Follower"
+	case Candidate:
+		return "Candidate"
+	case Leader:
+		return "Leader"
+	default:
+		return "Unknown"
+	}
 }

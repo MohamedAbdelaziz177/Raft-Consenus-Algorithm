@@ -35,6 +35,7 @@ func (node *RaftNode) RequestVote(
 
 		node.currentTerm = request.Term
 		node.votedFor = -1
+		node.leaderID = -1
 		node.State = Follower
 	}
 
@@ -161,6 +162,8 @@ func (node *RaftNode) AppendEntries(
 		node.votedFor = -1
 		node.State = Follower
 	}
+
+	node.leaderID = request.LeaderId
 
 	if node.State != Follower {
 		log.Printf(

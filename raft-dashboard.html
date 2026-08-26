@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raft KV Store</title>
+
+    <!-- Google Fonts - Sharp hand-drawn style -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Tilt+Warp&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: 'Inter', Arial, sans-serif;
+            background: linear-gradient(135deg, #bfdbfe 0%, #93c5fd 30%, #60a5fa 70%, #3b82f6 100%);
+            color: #000000;
+        }
+
+        .container {
+            width: min(1100px, 92%);
+            margin: 0 auto;
+            padding: 40px 0;
+        }
+
+        .header {
+            margin-bottom: 28px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 42px;
+            font-family: 'Tilt Warp', 'Caveat', cursive;
+            color: #000000;
+            letter-spacing: 1px;
+            font-style: italic;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .header p {
+            margin: 8px 0 0;
+            font-family: 'Caveat', cursive;
+            font-size: 20px;
+            color: #000000;
+            letter-spacing: 0.5px;
+            font-style: italic;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background: linear-gradient(145deg, #93c5fd 0%, #60a5fa 100%);
+            border: 2px solid #2563eb;
+            border-radius: 14px;
+            padding: 22px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+
+        .card h2 {
+            margin: 0 0 18px;
+            font-size: 20px;
+            font-family: 'Caveat', cursive;
+            color: #000000;
+            letter-spacing: 0.5px;
+            font-style: italic;
+            border-bottom: 2px solid #2563eb;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 7px;
+            font-size: 13px;
+            color: #000000;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            font-style: italic;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 11px 13px;
+            border-radius: 8px;
+            border: 2px solid #2563eb;
+            background: #bfdbfe;
+            color: #000000;
+            outline: none;
+            font-family: 'Inter', Arial, sans-serif;
+            font-style: italic;
+        }
+
+        input:focus,
+        select:focus {
+            border-color: #1d4ed8;
+            background: #93c5fd;
+        }
+
+        input::placeholder {
+            color: #1e3a8a;
+            opacity: 0.7;
+            font-style: italic;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            border: 2px solid #2563eb;
+            border-radius: 8px;
+            padding: 10px 18px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.15s;
+            font-family: 'Inter', Arial, sans-serif;
+            letter-spacing: 0.5px;
+            font-style: italic;
+            color: #000000;
+            background: linear-gradient(145deg, #bfdbfe 0%, #93c5fd 100%);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .set-btn {
+            background: linear-gradient(145deg, #bfdbfe 0%, #60a5fa 100%);
+            border-color: #1d4ed8;
+        }
+
+        .get-btn {
+            background: linear-gradient(145deg, #bfdbfe 0%, #60a5fa 100%);
+            border-color: #1d4ed8;
+        }
+
+        .delete-btn {
+            background: linear-gradient(145deg, #bfdbfe 0%, #60a5fa 100%);
+            border-color: #1d4ed8;
+        }
+
+        .set-btn:hover {
+            background: linear-gradient(145deg, #93c5fd 0%, #3b82f6 100%);
+        }
+
+        .get-btn:hover {
+            background: linear-gradient(145deg, #93c5fd 0%, #3b82f6 100%);
+        }
+
+        .delete-btn:hover {
+            background: linear-gradient(145deg, #93c5fd 0%, #3b82f6 100%);
+        }
+
+        .refresh-btn {
+            background: linear-gradient(145deg, #bfdbfe 0%, #60a5fa 100%);
+            border-color: #1d4ed8;
+        }
+
+        .refresh-btn:hover {
+            background: linear-gradient(145deg, #93c5fd 0%, #3b82f6 100%);
+        }
+
+        pre {
+            min-height: 130px;
+            margin: 0;
+            padding: 15px;
+            border-radius: 8px;
+            background: #bfdbfe;
+            border: 2px solid #2563eb;
+            color: #000000;
+            overflow: auto;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-style: italic;
+        }
+
+        .cluster {
+            margin-top: 20px;
+        }
+
+        .nodes {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+        }
+
+        .node {
+            padding: 15px;
+            background: linear-gradient(145deg, #93c5fd 0%, #60a5fa 100%);
+            border: 2px solid #2563eb;
+            border-radius: 10px;
+            color: #000000;
+        }
+
+        .node-title {
+            font-weight: 700;
+            margin-bottom: 10px;
+            font-family: 'Caveat', cursive;
+            font-size: 18px;
+            color: #000000;
+            font-style: italic;
+        }
+
+        .node-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 12px;
+            margin: 6px 0;
+            color: #000000;
+            font-style: italic;
+        }
+
+        .node-row span:last-child {
+            color: #000000;
+            font-weight: 600;
+        }
+
+        .leader {
+            border-color: #065f46;
+            box-shadow: 0 0 20px rgba(6, 95, 70, 0.2);
+            background: linear-gradient(145deg, #bfdbfe 0%, #60a5fa 100%);
+        }
+
+        .leader-badge {
+            display: inline-block;
+            margin-bottom: 8px;
+            padding: 3px 7px;
+            border-radius: 999px;
+            background: #065f46;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+            font-style: italic;
+        }
+
+        .follower-badge {
+            display: inline-block;
+            margin-bottom: 8px;
+            padding: 3px 7px;
+            border-radius: 999px;
+            background: #1e3a8a;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+            font-style: italic;
+        }
+
+        .error {
+            color: #991b1b;
+            font-weight: 700;
+        }
+
+        .success {
+            color: #065f46;
+            font-weight: 700;
+        }
+
+        .status {
+            margin-top: 10px;
+            min-height: 20px;
+            font-size: 13px;
+            color: #000000;
+            font-family: 'Caveat', cursive;
+            font-size: 16px;
+            font-style: italic;
+        }
+
+        @media (max-width: 850px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .nodes {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 500px) {
+            .nodes {
+                grid-template-columns: 1fr;
+            }
+
+            .buttons {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <div class="header">
+        <h1>Raft KV Store</h1>
+        <p>Distributed key-value store powered by the Raft consensus algorithm.</p>
+    </div>
+
+    <div class="grid">
+
+        <div class="card">
+            <h2>✏️ KV Operations</h2>
+
+            <div class="form-group">
+                <label for="node">Target Node</label>
+                <select id="node">
+                    <option value="0">Node 0 — :6000</option>
+                    <option value="1">Node 1 — :6001</option>
+                    <option value="2">Node 2 — :6002</option>
+                    <option value="3">Node 3 — :6003</option>
+                    <option value="4">Node 4 — :6004</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="key">Key</label>
+                <input id="key" type="text" placeholder="e.g. username">
+            </div>
+
+            <div class="form-group">
+                <label for="value">Value</label>
+                <input id="value" type="text" placeholder="e.g. Mohamed">
+            </div>
+
+            <div class="buttons">
+                <button class="set-btn" onclick="setValue()">SET</button>
+                <button class="get-btn" onclick="getValue()">GET</button>
+                <button class="delete-btn" onclick="deleteValue()">DELETE</button>
+            </div>
+
+            <div id="status" class="status"></div>
+        </div>
+
+        <div class="card">
+            <h2>📦 Response</h2>
+            <pre id="response">Waiting for request...</pre>
+        </div>
+    </div>
+
+    <div class="card cluster">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+            <h2 style="margin:0;">🔷 Cluster State</h2>
+            <button class="refresh-btn" onclick="refreshCluster()">↻ Refresh</button>
+        </div>
+
+        <div id="nodes" class="nodes"></div>
+    </div>
+
+</div>
+
+<script>
+    const nodePorts = {
+        0: 6000,
+        1: 6001,
+        2: 6002,
+        3: 6003,
+        4: 6004
+    };
+
+    let currentLeader = null;
+
+    function getBaseUrl(nodeId) {
+        return `http://localhost:${nodePorts[nodeId]}`;
+    }
+
+    function showResponse(data) {
+        document.getElementById("response").textContent =
+            JSON.stringify(data, null, 2);
+    }
+
+    function setStatus(message, success = true) {
+        const element = document.getElementById("status");
+        element.textContent = message;
+        element.className = success ? "status success" : "status error";
+    }
+
+    async function request(nodeId, path, options = {}, retry = true) {
+        try {
+            const response = await fetch(`${getBaseUrl(nodeId)}${path}`, options);
+            
+            // Get response as text first
+            const text = await response.text();
+            
+            let data = {};
+            try {
+                // Try to parse as JSON
+                data = JSON.parse(text);
+            } catch (_) {
+                // If not JSON, use the text as message
+                data = { message: text || 'Empty response' };
+            }
+
+            // Check for leader redirection (409 Conflict)
+            if (response.status === 409 && data.leaderId !== undefined && retry) {
+                currentLeader = Number(data.leaderId);
+                setStatus(
+                    `Node ${nodeId} is not the leader. Redirecting to Node ${currentLeader}...`
+                );
+                return request(
+                    currentLeader,
+                    path,
+                    options,
+                    false // Don't retry again to avoid infinite loops
+                );
+            }
+
+            return {
+                response: response,
+                data: data
+            };
+        } catch (error) {
+            console.error(`Request to ${path} failed:`, error);
+            throw new Error(`Failed to connect to server: ${error.message}`);
+        }
+    }
+
+    async function setValue() {
+        const nodeId = Number(document.getElementById("node").value);
+        const key = document.getElementById("key").value;
+        const value = document.getElementById("value").value;
+
+        if (!key || !value) {
+            setStatus("Key and value are required.", false);
+            return;
+        }
+
+        setStatus("Sending SET request...");
+
+        try {
+            const result = await request(
+                nodeId,
+                `/raft/set`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        key: key,
+                        value: value
+                    })
+                }
+            );
+
+            showResponse(result.data);
+
+            if (result.response.ok) {
+                setStatus("✅ SET command accepted.");
+            } else {
+                setStatus(
+                    result.data.message || "Request failed.",
+                    false
+                );
+            }
+
+            setTimeout(refreshCluster, 300);
+        } catch (error) {
+            setStatus(`❌ Error: ${error.message}`, false);
+            showResponse({ error: error.message });
+        }
+    }
+
+    async function getValue() {
+        const nodeId = Number(document.getElementById("node").value);
+        const key = document.getElementById("key").value;
+
+        if (!key) {
+            setStatus("Key is required.", false);
+            return;
+        }
+
+        setStatus("Reading value...");
+
+        try {
+            const result = await request(
+                nodeId,
+                `/raft/${encodeURIComponent(key)}`,
+                {
+                    method: "GET"
+                }
+            );
+
+            showResponse(result.data);
+
+            if (result.response.ok) {
+                setStatus("✅ Value retrieved.");
+            } else {
+                setStatus(
+                    result.data.message || "Key not found.",
+                    false
+                );
+            }
+        } catch (error) {
+            setStatus(`❌ Error: ${error.message}`, false);
+            showResponse({ error: error.message });
+        }
+    }
+
+    async function deleteValue() {
+        const nodeId = Number(document.getElementById("node").value);
+        const key = document.getElementById("key").value;
+
+        if (!key) {
+            setStatus("Key is required.", false);
+            return;
+        }
+
+        setStatus("Sending DELETE request...");
+
+        try {
+            const result = await request(
+                nodeId,
+                `/raft/${encodeURIComponent(key)}`,
+                {
+                    method: "DELETE"
+                }
+            );
+
+            showResponse(result.data);
+
+            if (result.response.ok) {
+                setStatus("✅ DELETE command accepted.");
+            } else {
+                setStatus(
+                    result.data.message || "Request failed.",
+                    false
+                );
+            }
+
+            setTimeout(refreshCluster, 300);
+        } catch (error) {
+            setStatus(`❌ Error: ${error.message}`, false);
+            showResponse({ error: error.message });
+        }
+    }
+
+    async function refreshCluster() {
+        const container = document.getElementById("nodes");
+        container.innerHTML = "";
+
+        for (let id = 0; id < 5; id++) {
+            try {
+                const response = await fetch(
+                    `${getBaseUrl(id)}/raft/debug/state`
+                );
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const state = await response.json();
+
+                if (state.state === "Leader") {
+                    currentLeader = id;
+                }
+
+                const card = document.createElement("div");
+                card.className =
+                    "node " +
+                    (state.state === "Leader" ? "leader" : "");
+
+                const badge =
+                    state.state === "Leader"
+                        ? `<span class="leader-badge">⚡ LEADER</span>`
+                        : `<span class="follower-badge">${state.state}</span>`;
+
+                card.innerHTML = `
+                    <div class="node-title">Node ${id}</div>
+                    ${badge}
+
+                    <div class="node-row">
+                        <span>Term</span>
+                        <span>${state.term ?? "-"}</span>
+                    </div>
+
+                    <div class="node-row">
+                        <span>Commit</span>
+                        <span>${state.commitIndex ?? "-"}</span>
+                    </div>
+
+                    <div class="node-row">
+                        <span>Applied</span>
+                        <span>${state.lastApplied ?? "-"}</span>
+                    </div>
+
+                    <div class="node-row">
+                        <span>Log</span>
+                        <span>${state.logLength ?? "-"}</span>
+                    </div>
+                `;
+
+                container.appendChild(card);
+
+            } catch (error) {
+                console.error(`Failed to fetch node ${id}:`, error);
+                const card = document.createElement("div");
+                card.className = "node";
+
+                card.innerHTML = `
+                    <div class="node-title">Node ${id}</div>
+                    <span class="follower-badge">⛔ OFFLINE</span>
+                `;
+
+                container.appendChild(card);
+            }
+        }
+    }
+
+    // Initial refresh and periodic updates
+    refreshCluster();
+    setInterval(refreshCluster, 2000);
+</script>
+
+</body>
+</html>

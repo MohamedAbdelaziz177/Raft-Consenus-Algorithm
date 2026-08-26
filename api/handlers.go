@@ -23,15 +23,17 @@ func NewHandler(node *raft.RaftNode, store *storage.KVStore) Handler {
 }
 
 func (handler *Handler) Set(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 
-	var req *SetRequest
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+	var req SetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	cmd := storage.Command{
-		Key:       req.key,
-		Value:     req.val,
+		Key:       req.Key,
+		Value:     req.Value,
 		Operation: "SET",
 	}
 
@@ -44,7 +46,7 @@ func (handler *Handler) Set(w http.ResponseWriter, r *http.Request) {
 	idx, succ := handler.node.Execute(cmdBytes)
 
 	if !succ {
-		w.Write([]byte("Request failed since requested replica is not the leader"))
+		writeNotLeader(w, handler.node.LeaderID())
 		return
 	}
 
@@ -55,6 +57,7 @@ func (handler *Handler) Set(w http.ResponseWriter, r *http.Request) {
 }
 
 func (handler *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	key := chi.URLParam(r, "key")
 
 	cmd := storage.Command{
@@ -71,7 +74,8 @@ func (handler *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	idx, succ := handler.node.Execute(cmdBytes)
 
 	if !succ {
-		w.Write([]byte("Request failed since requested replica is not the leader"))
+		writeNotLeader(w, handler.node.LeaderID())
+		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]any{
@@ -82,6 +86,7 @@ func (handler *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	key := chi.URLParam(r, "key")
 
 	value, ok := h.store.Get(key)
@@ -97,7 +102,25 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (handler *Handler) debugState(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	handler.node.DebugNodeState(w)
+}
+
+func writeNotLeader(w http.ResponseWriter, leaderID int32) {
+	response := map[string]any{
+		"success": false,
+		"message": "requested replica is not the leader",
+	}
+	if leaderID >= 0 {
+		response["leaderId"] = leaderID
+	}
+
+	w.WriteHeader(http.StatusConflict)
+	json.NewEncoder(w).Encode(response)
+}
+
 type SetRequest struct {
-	key string `json:"key"`
-	val string `json:"value"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }

@@ -16,6 +16,7 @@ func (node *RaftNode) startElection() {
 	node.mu.Lock()
 
 	node.votedFor = node.id
+	node.leaderID = -1
 	node.State = Candidate
 	node.currentTerm++
 	electionTerm := node.currentTerm
@@ -190,6 +191,7 @@ func (node *RaftNode) stepDownToFollower(reqVoteRes *raftproto.RequestVoteReply)
 	)
 
 	node.State = Follower
+	node.leaderID = -1
 	node.currentTerm = reqVoteRes.FollowerTerm
 	node.votedFor = -1
 	node.resetElectionTimer()
@@ -220,6 +222,7 @@ func (node *RaftNode) levelUpToLeader(grantedVotes int) {
 	}
 
 	node.State = Leader
+	node.leaderID = node.id
 
 	node.nextIndex = make(map[int]int64)
 	node.matchIndex = make(map[int]int64)

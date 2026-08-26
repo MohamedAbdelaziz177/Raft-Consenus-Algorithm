@@ -34,7 +34,7 @@ func main() {
 	stores := make(map[int]*storage.KVStore)
 
 	for id := 0; id < 5; id++ {
-		nodes[id] = raft.NewRaftNode()
+		nodes[id] = raft.NewRaftNode(int32(id))
 		stores[id] = storage.NewKVStore()
 	}
 
@@ -66,6 +66,8 @@ func main() {
 
 		go node.DetectElectionTimeout()
 	}
+
+	time.Sleep(1000 * time.Millisecond)
 
 	for id := range nodes {
 		go func(id int) {

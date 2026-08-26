@@ -156,6 +156,7 @@ func (node *RaftNode) handleAppendEntriesReply(
 		node.currentTerm = reply.Term
 		node.State = Follower
 		node.votedFor = -1
+		node.leaderID = -1
 		node.resetElectionTimer()
 		return
 	}
