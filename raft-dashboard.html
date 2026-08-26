@@ -367,7 +367,7 @@
 
 <script>
     const nodePorts = {
-        0: 6000,
+        0: 6005,
         1: 6001,
         2: 6002,
         3: 6003,
@@ -392,43 +392,34 @@
     }
 
     async function request(nodeId, path, options = {}, retry = true) {
+        const response = await fetch(`${getBaseUrl(nodeId)}${path}`, options);
+
+        let data = {};
         try {
-            const response = await fetch(`${getBaseUrl(nodeId)}${path}`, options);
-            
-            // Get response as text first
-            const text = await response.text();
-            
-            let data = {};
-            try {
-                // Try to parse as JSON
-                data = JSON.parse(text);
-            } catch (_) {
-                // If not JSON, use the text as message
-                data = { message: text || 'Empty response' };
-            }
-
-            // Check for leader redirection (409 Conflict)
-            if (response.status === 409 && data.leaderId !== undefined && retry) {
-                currentLeader = Number(data.leaderId);
-                setStatus(
-                    `Node ${nodeId} is not the leader. Redirecting to Node ${currentLeader}...`
-                );
-                return request(
-                    currentLeader,
-                    path,
-                    options,
-                    false // Don't retry again to avoid infinite loops
-                );
-            }
-
-            return {
-                response: response,
-                data: data
-            };
-        } catch (error) {
-            console.error(`Request to ${path} failed:`, error);
-            throw new Error(`Failed to connect to server: ${error.message}`);
+            data = await response.json();
+        } catch (_) {
+            data = { message: await response.text() };
         }
+
+        if (response.status === 409 && data.leaderId !== undefined && retry) {
+            currentLeader = Number(data.leaderId);
+
+            setStatus(
+                `Node ${nodeId} is not the leader. Redirecting to Node ${currentLeader}...`
+            );
+
+            return request(
+                currentLeader,
+                path,
+                options,
+                false
+            );
+        }
+
+        return {
+            response,
+            data
+        };
     }
 
     async function setValue() {
@@ -472,8 +463,7 @@
 
             setTimeout(refreshCluster, 300);
         } catch (error) {
-            setStatus(`❌ Error: ${error.message}`, false);
-            showResponse({ error: error.message });
+            setStatus(error.message, false);
         }
     }
 
@@ -508,8 +498,7 @@
                 );
             }
         } catch (error) {
-            setStatus(`❌ Error: ${error.message}`, false);
-            showResponse({ error: error.message });
+            setStatus(error.message, false);
         }
     }
 
@@ -546,8 +535,7 @@
 
             setTimeout(refreshCluster, 300);
         } catch (error) {
-            setStatus(`❌ Error: ${error.message}`, false);
-            showResponse({ error: error.message });
+            setStatus(error.message, false);
         }
     }
 
@@ -560,10 +548,6 @@
                 const response = await fetch(
                     `${getBaseUrl(id)}/raft/debug/state`
                 );
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
 
                 const state = await response.json();
 
@@ -608,8 +592,7 @@
 
                 container.appendChild(card);
 
-            } catch (error) {
-                console.error(`Failed to fetch node ${id}:`, error);
+            } catch (_) {
                 const card = document.createElement("div");
                 card.className = "node";
 
@@ -623,7 +606,6 @@
         }
     }
 
-    // Initial refresh and periodic updates
     refreshCluster();
     setInterval(refreshCluster, 2000);
 </script>
