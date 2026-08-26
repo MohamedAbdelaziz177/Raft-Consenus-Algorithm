@@ -1,4 +1,4 @@
-# Raft-Consenus-Algorithm
+# Raft-Consenus-Algorithm 🛢
 
 A from-scratch implementation of the **Raft consensus algorithm** in Go, wired up to a small **replicated key-value store** with a gRPC transport layer, an HTTP API, and a live web dashboard for watching the cluster elect leaders and replicate writes in real time.
 
