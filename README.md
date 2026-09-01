@@ -83,10 +83,6 @@ go run ./cmd/server
 
 `cmd/server/main.go` hardcodes each node's Raft (gRPC) and HTTP API addresses and boots the whole cluster at once, so there's nothing to configure per-node.
 
-> **Known issue:** node 0 is currently addressed as `localhost:5005` / `localhost:6005` while nodes 1–4 follow the `500X` / `600X` pattern — likely a typo for `5000` / `6000`. The dashboard hardcodes node 0's HTTP port as `6000`, so until this is fixed, node 0 will show as offline in the dashboard.
-
-Then open `raft-dashboard.html` in a browser to watch the cluster elect a leader and serve requests.
-
 ## API
 
 | Method | Path             | Description                                  |
